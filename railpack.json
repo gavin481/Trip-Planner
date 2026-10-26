@@ -1,10 +1,6 @@
 {
   "$schema": "https://schema.railpack.com",
   "provider": "python",
-  "packages": {
-    "python": "3.13"
-  },
-  "deploy": {
-    "startCommand": "python app/trip/server.py"
-  }
+  "packages": { "python": "3.13" },
+  "deploy": { "startCommand": "python app/trip/server.py" }
 }

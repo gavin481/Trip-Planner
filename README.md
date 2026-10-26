@@ -1,7 +1,8 @@
 # Trip-Planner
 
-Japan & Bali itinerary app.
+Standalone Japan & Bali trip itinerary app, deployed on Railway.
 
-Deploys to the Railway project **Trip-Planner**. Lost Miniatures / EMA stays separate.
-
-The full app is being added to this repo next.
+- Build: Railpack (Python 3.13) via `railway.toml` / `railpack.json`
+- Start: `python app/trip/server.py` (listens on `$PORT`)
+- Healthcheck: `/health`
+- Trip data/PDFs live on the Railway volume; use `scripts/copy_trip_data.py` to seed it.

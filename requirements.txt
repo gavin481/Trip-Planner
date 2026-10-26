@@ -1,5 +1,4 @@
-# Railpack uses this file to detect Python. Versions are pinned so a deploy
-# does not pick up a different release than the one reviewed here.
+# Versions are pinned so a deploy does not pick up a different release than the one reviewed here.
 tzdata==2026.5
 cryptography==50.0.2
 cffi==2.1.1
