@@ -1,0 +1,9 @@
+[build]
+builder = "RAILPACK"
+watchPatterns = ["app/trip/**", "app/secret_box.py", "requirements.txt"]
+
+[deploy]
+startCommand = "python app/trip/server.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
