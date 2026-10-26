@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-watchPatterns = ["app/trip/**", "app/secret_box.py", "requirements.txt"]
+watchPatterns = ["app/trip/**", "app/secret_box.py", "app/railway_deploy.py", "requirements.txt"]
 
 [deploy]
 startCommand = "python app/trip/server.py"

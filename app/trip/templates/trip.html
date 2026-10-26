@@ -802,6 +802,55 @@
       overflow-wrap: anywhere;
     }
     .hosted a { color: inherit; }
+    .hosted .deploy-log {
+      margin: 6px 0 0;
+      max-height: 9.5em;
+      overflow: auto;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--card);
+      font: 11px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .deploy-bar { margin: 10px 0 0; }
+    .deploy-btn {
+      min-height: 44px;
+      padding: 10px 18px;
+      border: 1px solid var(--terra);
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--terra);
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .deploy-btn svg { width: 18px; height: 18px; flex: none; }
+    .deploy-btn:disabled { opacity: 0.55; cursor: default; }
+    .deploy-confirm {
+      margin: 10px 0 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--card);
+    }
+    .deploy-confirm p { margin: 0 0 12px; font-size: 14px; color: var(--ink-2); }
+    .deploy-confirm .deploy-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .deploy-confirm .deploy-actions button {
+      min-height: 44px;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-weight: 700;
+    }
+    .deploy-confirm .deploy-go { border: 0; background: var(--terra); color: #fffaf2; }
+    .deploy-confirm .deploy-cancel { border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
+    @media (max-width: 480px) {
+      .deploy-btn { width: 100%; justify-content: center; }
+      .deploy-confirm .deploy-actions button { flex: 1 1 100%; }
+    }
+    @media print { .deploy-bar, .deploy-confirm, .hosted { display: none !important; } }
     .tool-icon.busy, .tool-icon:disabled { opacity: 0.45; }
     .tool-icon {
       width: 44px;
@@ -1044,6 +1093,19 @@
           <button id="openAdd" class="plus" type="button" aria-label="Add booking">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M11 5h2v14h-2zM5 11h14v2H5z" fill="currentColor"></path></svg>
           </button>
+        </div>
+      </div>
+      <div class="deploy-bar" id="deployBar" hidden>
+        <button id="promoteTrip" class="deploy-btn" type="button" aria-controls="deployConfirm" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.5 17 8h-3v6h-4V8H7l5-4.5zM5 18h14v2H5v-2z"></path></svg>
+          <span id="promoteLabel">Deploy to production</span>
+        </button>
+      </div>
+      <div class="deploy-confirm" id="deployConfirm" role="group" aria-labelledby="deployConfirmText" hidden>
+        <p id="deployConfirmText">This deploys the trip site to production. Lost Miniatures stays up and is not changed.</p>
+        <div class="deploy-actions">
+          <button id="deployGo" class="deploy-go" type="button">Deploy the trip site</button>
+          <button id="deployCancel" class="deploy-cancel" type="button">Cancel</button>
         </div>
       </div>
       <p class="hosted" id="hosted" hidden></p>
@@ -2375,19 +2437,70 @@
     });
 
     const deployButton = document.getElementById("deployTrip");
+    const promoteButton = document.getElementById("promoteTrip");
+    const deployBar = document.getElementById("deployBar");
+    const deployConfirm = document.getElementById("deployConfirm");
+    const deployConfirmText = document.getElementById("deployConfirmText");
+    const deployGo = document.getElementById("deployGo");
+    const deployCancel = document.getElementById("deployCancel");
+    const PROMOTE_TEXT = "This deploys the trip site to production. Lost Miniatures stays up and is not changed.";
+    const COPY_TEXT = "Copy this itinerary and its booking PDFs to production on Railway?";
     let deployPoll = 0;
+    let deployState = {};
+    function closeDeployConfirm() {
+      deployConfirm.hidden = true;
+      promoteButton.setAttribute("aria-expanded", "false");
+    }
+    function openDeployConfirm(promote) {
+      deployConfirmText.textContent = promote ? PROMOTE_TEXT : COPY_TEXT;
+      deployGo.textContent = promote ? "Deploy the trip site" : "Copy itinerary";
+      deployConfirm.hidden = false;
+      if (promote) promoteButton.setAttribute("aria-expanded", "true");
+      deployGo.focus();
+    }
+    function hostedLink(hosted, url, label) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = label;
+      hosted.appendChild(link);
+    }
     function showDeploy(state) {
       if (!deployButton) return;
-      deployButton.hidden = !state.local;
+      deployState = state || {};
+      const promote = !!state.promoteProd;
+      const local = !!state.local && !promote;
+      const hosted = document.getElementById("hosted");
+      deployButton.hidden = !local;
       deployButton.disabled = !!state.running;
       deployButton.classList.toggle("busy", !!state.running);
       deployButton.title = state.running ? "Copying to production" : "Copy this itinerary to production";
-      const hosted = document.getElementById("hosted");
-      if (!state.local) {
+      deployButton.setAttribute("aria-label", "Copy this itinerary to production");
+      deployBar.hidden = !promote;
+      promoteButton.disabled = !!state.running;
+      document.getElementById("promoteLabel").textContent = state.running ? "Deploying to production…" : "Deploy to production";
+      if ((!promote && !local) || state.running) closeDeployConfirm();
+      if (!promote && !local) {
         hosted.hidden = true;
-        return;
-      }
-      if (state.running) {
+      } else if (promote) {
+        hosted.replaceChildren();
+        let text = "";
+        if (state.running) text = "Deploying the trip site to production…";
+        else if (state.succeeded === true) text = "Production is live. ";
+        else if (state.error) text = state.error;
+        else if (!state.promoteReady) text = "Deploy to production is not set up yet.";
+        if (text) hosted.appendChild(document.createTextNode(text));
+        if (!state.running && state.succeeded === true && state.prodUrl) hostedLink(hosted, state.prodUrl, "Open production");
+        if (state.log && (state.running || state.succeeded === false)) {
+          const log = document.createElement("pre");
+          log.className = "deploy-log";
+          log.textContent = state.log;
+          hosted.appendChild(log);
+          log.scrollTop = log.scrollHeight;
+        }
+        hosted.hidden = !hosted.childNodes.length;
+      } else if (state.running) {
         hosted.hidden = false;
         hosted.textContent = "Copying this itinerary to production…";
       } else if (state.succeeded === false && state.error) {
@@ -2396,17 +2509,12 @@
       } else if (state.url) {
         hosted.hidden = false;
         hosted.replaceChildren();
-        const link = document.createElement("a");
-        link.href = state.url;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = "Open production";
-        hosted.appendChild(link);
+        hostedLink(hosted, state.url, "Open production");
       }
       if (state.running && !deployPoll) {
         deployPoll = window.setInterval(() => {
           refreshDeploy().catch(() => {});
-        }, 2000);
+        }, promote ? 4000 : 2000);
       }
       if (!state.running && deployPoll) {
         window.clearInterval(deployPoll);
@@ -2416,17 +2524,32 @@
     function refreshDeploy() {
       return api("/trip/api/deploy").then(showDeploy);
     }
-    deployButton.addEventListener("click", async () => {
-      if (!window.confirm("Copy this itinerary to production on Railway?")) return;
+    deployButton.addEventListener("click", () => {
+      if (deployConfirm.hidden) openDeployConfirm(false);
+      else closeDeployConfirm();
+    });
+    promoteButton.addEventListener("click", () => {
+      if (deployConfirm.hidden) openDeployConfirm(true);
+      else closeDeployConfirm();
+    });
+    deployCancel.addEventListener("click", () => {
+      closeDeployConfirm();
+      (deployState.promoteProd ? promoteButton : deployButton).focus();
+    });
+    deployGo.addEventListener("click", async () => {
+      const promote = !!deployState.promoteProd;
+      closeDeployConfirm();
       deployButton.disabled = true;
+      promoteButton.disabled = true;
       deployButton.classList.add("busy");
       try {
-        showDeploy(await api("/trip/api/deploy", {method: "POST", body: "{}"}));
+        showDeploy(await api("/trip/api/deploy", {method: "POST", body: JSON.stringify({mode: promote ? "promote" : "itinerary"})}));
       } catch (error) {
         const hosted = document.getElementById("hosted");
         hosted.hidden = false;
         hosted.textContent = error.message;
         deployButton.disabled = false;
+        promoteButton.disabled = false;
         deployButton.classList.remove("busy");
       }
     });
