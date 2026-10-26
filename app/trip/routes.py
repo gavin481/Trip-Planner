@@ -1567,16 +1567,75 @@ def _copy_itinerary_to_prod() -> None:
         _COPY_JOB["error"] = "" if succeeded else error
 
 
+def _promote_module():
+    """The trip copy of railway_deploy (app/railway_deploy.py), only in the standalone trip service.
+
+    Imported the same way as secret_box: app/ is on sys.path. Inside ema the
+    module of that name belongs to Lost Miniatures, so it is never used there.
+    """
+    if os.environ.get("TRIP_STANDALONE") != "1":
+        return None
+    try:
+        import railway_deploy
+    except ImportError:
+        return None
+    return railway_deploy if hasattr(railway_deploy, "can_promote") else None
+
+
+def _project_root() -> Path:
+    # app/trip/routes.py -> repository root (parent of app/).
+    return Path(__file__).resolve().parents[2]
+
+
+def _app_environment() -> str:
+    module = _promote_module()
+    if module is not None:
+        return module.app_environment()
+    explicit = str(os.environ.get("DLM_ENV", "") or "").strip().upper()
+    if explicit in {"DEV", "DEVELOPMENT"}:
+        return "DEV"
+    if explicit in {"PROD", "PRODUCTION"}:
+        return "PROD"
+    name = str(os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") or "").strip().lower()
+    if name in {"development", "dev", "staging"}:
+        return "DEV"
+    return "PROD" if _on_railway() else "LOCAL"
+
+
+def _promote_payload(module) -> dict:
+    state = module.status(_data_dir())
+    prod = str(state.get("prodUrl") or "").rstrip("/")
+    prod_trip = f"{prod}/trip" if prod and not prod.endswith("/trip") else prod
+    state.update({
+        "mode": "promote",
+        "url": prod_trip,
+        "prodUrl": prod_trip,
+        "published": published_stamp(),
+    })
+    return state
+
+
 def _deploy_payload() -> dict:
+    module = _promote_module()
+    if module is not None and module.can_promote():
+        return _promote_payload(module)
     with _COPY_LOCK:
         job = dict(_COPY_JOB)
+    local = not _on_railway()
+    url = "" if not local else _prod_trip_url()
     return {
         "ok": True,
-        "local": not _on_railway(),
-        "url": "" if _on_railway() else _prod_trip_url(),
-        "running": bool(job["running"]),
-        "succeeded": job["succeeded"],
-        "error": str(job["error"] or ""),
+        "mode": "itinerary" if local else "none",
+        "local": local,
+        "environment": _app_environment(),
+        "promoteProd": False,
+        "promoteReady": False,
+        "url": url,
+        "prodUrl": url,
+        "running": bool(job["running"]) if local else False,
+        "succeeded": job["succeeded"] if local else None,
+        "error": str(job["error"] or "") if local else "",
+        "log": "",
         "published": published_stamp(),
     }
 
@@ -1591,12 +1650,24 @@ def _deploy_status(handler) -> int:
 def _deploy_start(handler) -> int:
     if not _require_unlock(handler):
         return HTTPStatus.UNAUTHORIZED
+    handler._read_json()  # Body is ignored; the environment decides what a deploy means.
     if _on_railway():
-        handler._send_json(
-            {"ok": False, "error": "Copy the itinerary from this PC. Production already has its own copy."},
-            status=HTTPStatus.BAD_REQUEST,
-        )
-        return HTTPStatus.BAD_REQUEST
+        module = _promote_module()
+        if module is None or not module.can_promote():
+            handler._send_json(
+                {"ok": False, "error": "This is production. Deploy to production from the hosted DEV trip site."},
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return HTTPStatus.BAD_REQUEST
+        try:
+            module.start(_project_root(), _data_dir(), target="prod")
+        except module.RailwayDeployError as exc:
+            payload = _promote_payload(module)
+            payload.update({"ok": False, "error": str(exc)})
+            handler._send_json(payload, status=HTTPStatus.BAD_REQUEST)
+            return HTTPStatus.BAD_REQUEST
+        handler._send_json(_promote_payload(module))
+        return HTTPStatus.OK
     with _COPY_LOCK:
         if not _COPY_JOB["running"]:
             _COPY_JOB["running"] = True
