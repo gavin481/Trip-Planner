@@ -560,6 +560,14 @@
       padding: 5px 0;
     }
     .insure-group a { color: inherit; text-decoration: none; font-weight: 650; }
+    .visa-note { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+    .visa-open {
+      display: inline-block;
+      margin: 10px 0 0;
+      color: var(--terra-ink);
+      font-weight: 650;
+      text-decoration: none;
+    }
     .cost { margin: 4px 0 0; font-weight: 650; font-variant-numeric: tabular-nums; }
     .cost .aud { font-weight: 400; color: var(--muted); }
     .todo {
@@ -1519,6 +1527,13 @@
             </div>
             <div class="insure-card" id="insureCard"></div>
           </section>
+          <section class="day" id="visa" aria-labelledby="visaTitle" hidden>
+            <div class="day-head">
+              <p class="day-kicker">Entry to Japan</p>
+              <h2 id="visaTitle">Jerry’s Japan visa</h2>
+            </div>
+            <div class="insure-card" id="visaCard"></div>
+          </section>
         </div>
       </main>
     </div>
@@ -1646,6 +1661,7 @@
     let latestItems = [];
     let rates = FALLBACK_RATES;
     let insurance = null;
+    let visa = null;
     let editingId = "";
 
     // Yen and rupiah are not written with cents, and converted figures are rounded.
@@ -1975,6 +1991,65 @@
       (insurance.service || []).forEach(entry => serviceList.appendChild(contactRow(entry)));
       service.appendChild(serviceList);
       card.appendChild(service);
+    }
+
+    function renderVisa(entry) {
+      if (entry) visa = entry;
+      const section = document.getElementById("visa");
+      const card = document.getElementById("visaCard");
+      if (!section || !card) return;
+      if (!visa || !visa.issueNo) {
+        section.hidden = true;
+        return;
+      }
+      section.hidden = false;
+      card.replaceChildren();
+      const top = el("div", "insure-top");
+      const titles = el("div");
+      titles.appendChild(el("h3", "", visa.title || "Japan eVISA"));
+      titles.appendChild(el("p", "sub", (visa.document || "Visa Issuance Notice") + " · " + (visa.traveller || "")));
+      top.appendChild(titles);
+      const fileUrl = "/trip/file/" + encodeURIComponent(visa.id);
+      if (visa.fileName) {
+        const clip = document.createElement("a");
+        clip.className = "icon-link clip";
+        clip.href = fileUrl;
+        clip.target = "_blank";
+        clip.rel = "noopener";
+        clip.title = visa.fileName;
+        clip.setAttribute("aria-label", "Open " + visa.fileName);
+        clip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.1 11.4l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"></path></svg>';
+        top.appendChild(clip);
+      }
+      card.appendChild(top);
+      const facts = el("ul", "insure-facts");
+      [
+        ["Traveller", visa.fullName || visa.traveller],
+        ["Nationality", visa.nationality],
+        ["Issue no.", visa.issueNo],
+        ["Issued", [visa.placeOfIssue, visa.dateOfIssue].filter(Boolean).join(" · ")],
+        ["Category", visa.category],
+        ["Stay", visa.stay],
+        ["Expires", visa.expiry],
+        ["Entries", visa.entries],
+        ["Receipt no.", visa.receipt],
+      ].filter(([, value]) => value).forEach(([label, value]) => {
+        const row = document.createElement("li");
+        row.appendChild(el("span", "", label));
+        row.appendChild(el("strong", "", value));
+        facts.appendChild(row);
+      });
+      card.appendChild(facts);
+      if (visa.note) card.appendChild(el("p", "visa-note", visa.note));
+      if (visa.fileName) {
+        const open = document.createElement("a");
+        open.className = "visa-open";
+        open.href = fileUrl;
+        open.target = "_blank";
+        open.rel = "noopener";
+        open.textContent = "Open issuance notice";
+        card.appendChild(open);
+      }
     }
 
     let todoSource = null;
@@ -3188,6 +3263,7 @@
       panel.appendChild(jumpButton("Trip cost", "totals"));
       panel.appendChild(jumpButton("To do", "todos"));
       if (insurance && insurance.policy) panel.appendChild(jumpButton("Travel insurance", "insurance"));
+      if (visa && visa.issueNo) panel.appendChild(jumpButton("Jerry’s Japan visa", "visa"));
       panel.appendChild(el("h2", "", "Type"));
       FILTER_TYPES.forEach(([value, label]) => {
         const checked = value === "all" ? typeFilters.size === 0 : typeFilters.has(value);
@@ -3197,7 +3273,7 @@
     }
 
     function syncFilters() {
-      const key = insurance && insurance.policy ? "insured" : "plain";
+      const key = (insurance && insurance.policy ? "insured" : "plain") + (visa && visa.issueNo ? "-visa" : "");
       if (syncFilters.key !== key) {
         syncFilters.key = key;
         paintFilters();
@@ -3262,6 +3338,7 @@
         showApp();
         if (payload.rates) rates = payload.rates;
         renderInsurance(payload.insurance);
+        renderVisa(payload.visa);
         render(payload.items || []);
         renderTodos(payload.todos);
         refreshDeploy().catch(() => {});
@@ -3648,6 +3725,7 @@
       showApp();
       if (payload.rates) rates = payload.rates;
       renderInsurance(payload.insurance);
+      renderVisa(payload.visa);
       render(payload.items || []);
       renderTodos(payload.todos);
       refreshDeploy().catch(() => {});

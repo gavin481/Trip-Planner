@@ -700,6 +700,46 @@ def insurance_public() -> dict:
     }
 
 
+VISA_ID = "japan-visa-jerry"
+_VISA_IMAGE = Path(__file__).resolve().parent / "assets" / "japan-visa-jerry.jpg.b64"
+_VISA_BYTES: bytes | None = None
+
+
+def _visa_image() -> bytes:
+    """Jerry's eVISA issuance notice, shipped in the repo as base64 text."""
+    global _VISA_BYTES
+    if _VISA_BYTES is None:
+        try:
+            _VISA_BYTES = base64.b64decode(_VISA_IMAGE.read_text(encoding="ascii"))
+        except (OSError, ValueError):
+            return b""
+    return _VISA_BYTES
+
+
+# Japan eVISA issuance notice for Jerry, issued in Melbourne 27 Oct 2026.
+def visa_public() -> dict:
+    return {
+        "id": VISA_ID,
+        "title": "Jerry’s Japan eVISA",
+        "document": "Visa Issuance Notice",
+        "traveller": "Jerry Silaban",
+        "fullName": "SILABAN JERRY EDWARD PARULIAN",
+        "nationality": "Indonesia",
+        "sex": "M",
+        "issueNo": "V260010644",
+        "placeOfIssue": "Melbourne",
+        "dateOfIssue": "27 Oct 2026",
+        "category": "(V) Temporary visitor",
+        "stay": "15 days",
+        "expiry": "27 Jan 2027",
+        "entries": "Single",
+        "receipt": "1000010666119",
+        "authority": "Ministry of Foreign Affairs, Japan",
+        "note": "Show the QR code on this notice at arrival, with the passport used for the eVISA application.",
+        "fileName": "Japan eVISA notice.jpg" if _VISA_IMAGE.is_file() else "",
+    }
+
+
 def _payload() -> dict:
     return {
         "ok": True,
@@ -707,6 +747,7 @@ def _payload() -> dict:
         "todos": list_todos(),
         "rates": RATES_PER_AUD,
         "insurance": insurance_public(),
+        "visa": visa_public(),
     }
 
 
@@ -1314,6 +1355,19 @@ def _booking_file(handler, path: str) -> int:
     if not _PHOTO_ID_RE.fullmatch(item_id):
         handler.send_error(HTTPStatus.NOT_FOUND)
         return HTTPStatus.NOT_FOUND
+    if item_id == VISA_ID:
+        body = _visa_image()
+        if not body:
+            handler.send_error(HTTPStatus.NOT_FOUND)
+            return HTTPStatus.NOT_FOUND
+        handler._send_bytes(
+            body,
+            status=HTTPStatus.OK,
+            content_type="image/jpeg",
+            cache_control="private, no-store",
+            extra_headers={"Content-Disposition": 'inline; filename="Japan-eVISA-Jerry.jpg"'},
+        )
+        return HTTPStatus.OK
     match = None
     for row in list_items():
         if row.get("id") == item_id and row.get("fileName"):
